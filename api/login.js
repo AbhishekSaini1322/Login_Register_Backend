@@ -1,6 +1,8 @@
 const { application } = require("express")
 const User = require("../models/userTable")
 const bcrypt = require("bcrypt")
+const jwt = require("jsonwebtoken")
+require("dotenv").config();
 
 const login = async (req,res) => {
     const { email,password } = req.body
@@ -13,21 +15,52 @@ const login = async (req,res) => {
     }
 
     try{
-        const user = await User.findOne({email})
+        let user = await User.findOne({email})
         if(!user){
-            return res.status(400).json({msg:"Email not registered"})
+            return res.status(401).json({msg:"Email not registered"})
         }
-        const match = await bcrypt.compare(password, user.password);
-        if (!match) {
-          return res.status(400).json({ msg: "Password does not match" });
+
+        const payload = {
+            email:user.email,
+            id:user._id,
+            username:user.username
         }
-        
-       return res.status(200).json({ msg: "login success" })
+        if(await bcrypt.compare(password,user.password)){
+            let token = jwt.sign(payload, 
+                           process.env.JWT_SECRET,
+                           {
+                            expiresIn:'2h',
+                           });
+            
+            user = user.toObject();
+            user.token = token;
+            user.password = undefined;
+            console.log(user);
+            
+            const options = {
+                expires: new Date( Date.now() + 3 * 24 * 60 * 60 * 1000 ),
+                httpOnly:true,
+            }
+            res.cookie("token", token, options).status(200).json({
+                success:true,
+                token,
+                user,
+                msg:"User login Successfully"
+            });
+        }
+        else{
+            return res.status(403).json({
+                success:false,
+                msg:"Password Incorrect"
+            })
+        }
+
         
     }
     catch(error){
         console.log(error);
-        return res.status(500).json({msg:"Server error"})
+        return res.status(500).json({success:false,
+            msg:"Server error"})
     }
 }
 
